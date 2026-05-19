@@ -1,0 +1,3 @@
+﻿- [User role](user_role.md) — Neuroscience/BCI researcher building ESP32 SSVEP + EEG stacks; deep domain expertise, Chinese-native, parallel ESP projects under esp_prj/
+- [Response style](feedback_response_style.md) — Wants concrete µs/ms numbers + tier tables; iterative requirements; "make reasonable call and continue"
+- [Dev environment](reference_dev_env.md) — IDF v5.5 at esp/v5.5; system Python 3.8 trap; VIZ conda env for PC tools; Write hook blocks non-allowlisted .md files

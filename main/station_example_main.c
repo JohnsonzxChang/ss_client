@@ -1,15 +1,19 @@
 #include <string.h>
 #include <stdlib.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/ringbuf.h"
 #include "esp_system.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "nvs_flash.h"
 #include "esp_netif.h"
 #include "driver/ledc.h"
+#include "driver/gpio.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
@@ -67,6 +71,182 @@ static const ledc_channel_t CHANNEL_LEDC[NUM_CHANNELS] = {
 /* ---- 全局变量 ---- */
 static EventGroupHandle_t s_wifi_event_group;
 static int s_retry_num = 0;
+
+/* ---- EVOKE 单次刺激: 每通道一个 esp_timer, 用于到时自动关闭 ---- */
+static esp_timer_handle_t evoke_off_timers[NUM_CHANNELS];
+
+/* ================================================================
+ *  EVOKE 关闭回调: 由 esp_timer 在 duration 到期时触发
+ *  arg = (intptr_t)idx, 即通道索引 (0..NUM_CHANNELS-1)
+ * ================================================================ */
+static void evoke_off_cb(void *arg)
+{
+    intptr_t idx = (intptr_t)arg;
+    if (idx < 0 || idx >= NUM_CHANNELS) return;
+    ledc_set_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx], 0);
+    ledc_update_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx]);
+}
+
+/* ================================================================
+ *  为每通道创建一个一次性 off-timer
+ * ================================================================ */
+static void evoke_timers_init(void)
+{
+    for (intptr_t i = 0; i < NUM_CHANNELS; i++) {
+        const esp_timer_create_args_t args = {
+            .callback = &evoke_off_cb,
+            .arg      = (void *)i,
+            .name     = "evoke_off",
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&args, &evoke_off_timers[i]));
+    }
+    ESP_LOGI(TAG, "Evoke off-timers ready (%d channels)", NUM_CHANNELS);
+}
+
+/* ================================================================
+ *  EDGE LOGGING — Path A: GPIO ANYEDGE ISR -> RingBuffer -> UDP
+ *  用途: 把 LEDC 真实驱动的每个 on/off 边沿打戳上报, 让 PC 端获得
+ *  per-cycle 时间真值, 而不只是首个 onset.
+ * ================================================================ */
+
+/* 单条边沿事件 — 12 字节 */
+typedef struct {
+    int64_t ts_us;     /* esp_timer_get_time() 在 ISR 中的捕获值 */
+    uint8_t ch;        /* 通道索引 0..NUM_CHANNELS-1 */
+    uint8_t level;     /* GPIO 电平 0/1 */
+    uint8_t _pad[2];
+} edge_event_t;
+
+#define EDGE_RINGBUF_SIZE    (8 * 1024)   /* 装得下 ~680 事件 */
+#define EDGE_PACK_MAX        50           /* 单 UDP 包最多事件数, 留足 MTU 余量 */
+#define EDGE_DRAIN_TIMEOUT_MS 50          /* 首事件等待上限, 决定打包延迟 */
+
+static RingbufHandle_t edge_ringbuf = NULL;
+static volatile bool   edge_log_enabled = false;
+static uint32_t        edge_pkt_seq = 0;
+static volatile uint32_t edge_drop_count = 0;  /* ringbuf 溢出计数 */
+
+/* ----------------------------------------------------------------
+ *  IRAM ISR — 任何 GPIO 边沿都进这里, 只做时间戳 + 入队
+ *  禁止调用任何非 ISR-safe 的 API (UART log, lwIP, malloc 等)
+ * ---------------------------------------------------------------- */
+static void IRAM_ATTR edge_isr(void *arg)
+{
+    intptr_t idx = (intptr_t)arg;
+    int64_t t = esp_timer_get_time();
+    int level = gpio_get_level(CHANNEL_PINS[idx]);
+
+    edge_event_t ev = {
+        .ts_us = t,
+        .ch    = (uint8_t)idx,
+        .level = (uint8_t)(level & 0x1),
+    };
+
+    BaseType_t hp_woken = pdFALSE;
+    if (xRingbufferSendFromISR(edge_ringbuf, &ev, sizeof(ev), &hp_woken) != pdTRUE) {
+        edge_drop_count++;
+    }
+    if (hp_woken == pdTRUE) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+/* ----------------------------------------------------------------
+ *  启用/停用边沿日志
+ *  启用: 给所有通道 GPIO 加 INPUT 缓冲 + ANYEDGE 中断 + ISR handler
+ *  停用: 仅移除 ISR handler (保留 INPUT 缓冲, 不影响 LEDC 输出)
+ * ---------------------------------------------------------------- */
+static esp_err_t edge_log_enable_all(void)
+{
+    if (edge_log_enabled) return ESP_OK;
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        /* LEDC 已把 GPIO 设为 OUTPUT 并通过矩阵驱动; 这里加 INPUT 不破坏 LEDC 路由 */
+        gpio_set_direction(CHANNEL_PINS[i], GPIO_MODE_INPUT_OUTPUT);
+        gpio_set_intr_type(CHANNEL_PINS[i], GPIO_INTR_ANYEDGE);
+        esp_err_t err = gpio_isr_handler_add(CHANNEL_PINS[i],
+                                             edge_isr,
+                                             (void *)(intptr_t)i);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "gpio_isr_handler_add(CH%d) -> %s", i + 1, esp_err_to_name(err));
+            return err;
+        }
+    }
+    edge_drop_count = 0;
+    edge_log_enabled = true;
+    ESP_LOGI(TAG, "EDGE_LOG enabled (8 channels, ANYEDGE)");
+    return ESP_OK;
+}
+
+static esp_err_t edge_log_disable_all(void)
+{
+    if (!edge_log_enabled) return ESP_OK;
+    for (int i = 0; i < NUM_CHANNELS; i++) {
+        gpio_isr_handler_remove(CHANNEL_PINS[i]);
+        gpio_set_intr_type(CHANNEL_PINS[i], GPIO_INTR_DISABLE);
+    }
+    edge_log_enabled = false;
+    ESP_LOGI(TAG, "EDGE_LOG disabled");
+    return ESP_OK;
+}
+
+/* ----------------------------------------------------------------
+ *  Edge sender 任务 — 从 ringbuf 拉事件, 打包成 ASCII UDP 广播给 PC
+ *  报文格式: EDGES,<seq>,<count>,<ch>,<lv>,<us>[,<ch>,<lv>,<us>]...
+ *  目的地址: 255.255.255.255:5006 (PC 用同一 socket 监听 HELLO + EDGES)
+ * ---------------------------------------------------------------- */
+static void edge_sender_task(void *arg)
+{
+    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (sock < 0) {
+        ESP_LOGE(TAG, "edge_sender: socket failed errno=%d", errno);
+        vTaskDelete(NULL);
+        return;
+    }
+    int bcast = 1;
+    setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof(bcast));
+
+    struct sockaddr_in dst = {
+        .sin_family = AF_INET,
+        .sin_port   = htons(PC_PORT),
+    };
+    inet_aton(PC_IP, &dst.sin_addr);
+
+    char buf[1400];
+
+    while (1) {
+        /* 阻塞等首个事件, 超时则空转 — 这样 edge_log 关时本任务几乎零开销 */
+        size_t item_size = 0;
+        edge_event_t *first = (edge_event_t *)xRingbufferReceive(
+            edge_ringbuf, &item_size, pdMS_TO_TICKS(EDGE_DRAIN_TIMEOUT_MS));
+        if (first == NULL) continue;
+
+        edge_event_t batch[EDGE_PACK_MAX];
+        batch[0] = *first;
+        vRingbufferReturnItem(edge_ringbuf, first);
+        int count = 1;
+
+        /* 不再等, 把当前积压一次性榨干 (至多 EDGE_PACK_MAX) */
+        while (count < EDGE_PACK_MAX) {
+            edge_event_t *e = (edge_event_t *)xRingbufferReceive(
+                edge_ringbuf, &item_size, 0);
+            if (e == NULL) break;
+            batch[count++] = *e;
+            vRingbufferReturnItem(edge_ringbuf, e);
+        }
+
+        int len = snprintf(buf, sizeof(buf), "EDGES,%" PRIu32 ",%d",
+                           edge_pkt_seq++, count);
+        for (int i = 0; i < count && len < (int)sizeof(buf) - 40; i++) {
+            len += snprintf(buf + len, sizeof(buf) - len,
+                            ",%u,%u,%" PRId64,
+                            (unsigned)(batch[i].ch + 1),  /* 1-indexed for PC */
+                            (unsigned)batch[i].level,
+                            batch[i].ts_us);
+        }
+
+        sendto(sock, buf, len, 0, (struct sockaddr *)&dst, sizeof(dst));
+    }
+}
 
 /* ================================================================
  *  LEDC 初始化: 8 个定时器 + 8 个通道, 50% 占空比方波
@@ -231,9 +411,15 @@ static void wifi_init_sta(void)
 }
 
 /* ================================================================
- *  UDP 服务器任务 — 接收频率配置命令
- *  协议: "FREQ,<channel 1-8>,<hz 1-100>"
- *  响应: "OK,<ch>,<hz>" 或 "ERR,PARSE"
+ *  UDP 服务器任务 — 接收命令
+ *  协议 (统一文本格式, 见 CLAUDE.md):
+ *    FREQ,<ch 1..8>,<hz 0..100>             -> OK,FREQ,<ch>,<hz>,<onset_us>
+ *    EVOKE,<ch 1..8>,<duration_ms 1..10000> -> OK,EVOKE,<ch>,<ms>,<onset_us>
+ *    SYNC,<pc_send_us>                      -> OK,SYNC,<pc_send_us>,<esp_recv_us>,<esp_send_us>
+ *  错误:
+ *    ERR,PARSE | ERR,CHANNEL | ERR,RANGE | ERR,LEDC
+ *  所有 us 时间戳均为 esp_timer_get_time() 自启动以来的 int64 微秒计数,
+ *  PC 端通过 SYNC 计算 ESP↔PC 时间偏移以消除无线传输抖动。
  * ================================================================ */
 static void udp_server_task(void *pvParameters)
 {
@@ -266,6 +452,8 @@ static void udp_server_task(void *pvParameters)
 
         int len = recvfrom(sock, rx_buf, UDP_BUF_SIZE - 1, 0,
                            (struct sockaddr *)&client_addr, &addr_len);
+        /* 关键: 紧接 recvfrom 解阻塞后捕获时间戳, 用于 SYNC 的 t_recv */
+        int64_t t_recv = esp_timer_get_time();
         if (len < 0) {
             ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
             continue;
@@ -274,54 +462,101 @@ static void udp_server_task(void *pvParameters)
         rx_buf[len] = '\0';
         ESP_LOGI(TAG, "UDP recv: \"%s\"", rx_buf);
 
-        int ch = 0, hz = 0;
-        if (sscanf(rx_buf, "FREQ,%d,%d", &ch, &hz) == 2) {
+        char ack[96];
+        int ch = 0, val = 0;
+        unsigned long long pc_us = 0;
+
+        if (sscanf(rx_buf, "FREQ,%d,%d", &ch, &val) == 2) {
+            /* --- FREQ: 设置/关闭通道连续 PWM --- */
             if (ch < 1 || ch > NUM_CHANNELS) {
                 const char *resp = "ERR,CHANNEL";
-                sendto(sock, resp, strlen(resp), 0,
-                       (struct sockaddr *)&client_addr, addr_len);
-                ESP_LOGW(TAG, "Invalid channel %d", ch);
-            } else if (hz < 0 || hz > 100) {
+                sendto(sock, resp, strlen(resp), 0, (struct sockaddr *)&client_addr, addr_len);
+                ESP_LOGW(TAG, "FREQ: invalid channel %d", ch);
+            } else if (val < 0 || val > 100) {
                 const char *resp = "ERR,RANGE";
-                sendto(sock, resp, strlen(resp), 0,
-                       (struct sockaddr *)&client_addr, addr_len);
-                ESP_LOGW(TAG, "Invalid frequency %d Hz", hz);
+                sendto(sock, resp, strlen(resp), 0, (struct sockaddr *)&client_addr, addr_len);
+                ESP_LOGW(TAG, "FREQ: invalid hz %d (0..100)", val);
             } else {
                 int idx = ch - 1;
                 esp_err_t err = ESP_OK;
-                if (hz == 0) {
-                    /* 关闭通道: 占空比设 0, GPIO 输出恒低 */
+                /* 任何 FREQ 设置都先取消未到期的 EVOKE off-timer, 避免被自动关闭 */
+                esp_timer_stop(evoke_off_timers[idx]);
+                if (val == 0) {
                     err = ledc_set_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx], 0);
                     if (err == ESP_OK)
                         err = ledc_update_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx]);
                 } else {
-                    /* 恢复/更改频率: 先设频率, 再恢复 50% 占空比 */
-                    err = ledc_set_freq(CHANNEL_SPEED[idx],
-                                        CHANNEL_TIMER[idx],
-                                        (uint32_t)hz);
+                    err = ledc_set_freq(CHANNEL_SPEED[idx], CHANNEL_TIMER[idx], (uint32_t)val);
                     if (err == ESP_OK) {
                         ledc_set_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx], LEDC_DUTY_50PCT);
                         ledc_update_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx]);
                     }
                 }
+                int64_t t_onset = esp_timer_get_time();
                 if (err == ESP_OK) {
-                    channel_freq[idx] = (uint32_t)hz;
-                    char ack[32];
-                    int ack_len = snprintf(ack, sizeof(ack), "OK,%d,%d", ch, hz);
-                    sendto(sock, ack, ack_len, 0,
-                           (struct sockaddr *)&client_addr, addr_len);
-                    ESP_LOGI(TAG, "CH%d → %d Hz", ch, hz);
+                    channel_freq[idx] = (uint32_t)val;
+                    int ack_len = snprintf(ack, sizeof(ack),
+                        "OK,FREQ,%d,%d,%" PRId64, ch, val, t_onset);
+                    sendto(sock, ack, ack_len, 0, (struct sockaddr *)&client_addr, addr_len);
+                    ESP_LOGI(TAG, "FREQ CH%d -> %d Hz @ %" PRId64 " us", ch, val, t_onset);
                 } else {
                     const char *resp = "ERR,LEDC";
-                    sendto(sock, resp, strlen(resp), 0,
-                           (struct sockaddr *)&client_addr, addr_len);
-                    ESP_LOGE(TAG, "ledc_set_freq failed: %s", esp_err_to_name(err));
+                    sendto(sock, resp, strlen(resp), 0, (struct sockaddr *)&client_addr, addr_len);
+                    ESP_LOGE(TAG, "FREQ ledc failed: %s", esp_err_to_name(err));
                 }
             }
+        } else if (sscanf(rx_buf, "EVOKE,%d,%d", &ch, &val) == 2) {
+            /* --- EVOKE: 单次刺激, 当前频率持续 val 毫秒后自动关闭 --- */
+            if (ch < 1 || ch > NUM_CHANNELS) {
+                const char *resp = "ERR,CHANNEL";
+                sendto(sock, resp, strlen(resp), 0, (struct sockaddr *)&client_addr, addr_len);
+                ESP_LOGW(TAG, "EVOKE: invalid channel %d", ch);
+            } else if (val < 1 || val > 10000) {
+                const char *resp = "ERR,RANGE";
+                sendto(sock, resp, strlen(resp), 0, (struct sockaddr *)&client_addr, addr_len);
+                ESP_LOGW(TAG, "EVOKE: invalid duration %d ms (1..10000)", val);
+            } else {
+                int idx = ch - 1;
+                /* 若有未到期 off-timer, 先停, 再以新 duration 重启 */
+                esp_timer_stop(evoke_off_timers[idx]);
+                esp_err_t err = ledc_set_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx], LEDC_DUTY_50PCT);
+                if (err == ESP_OK)
+                    err = ledc_update_duty(CHANNEL_SPEED[idx], CHANNEL_LEDC[idx]);
+                int64_t t_onset = esp_timer_get_time();
+                if (err == ESP_OK) {
+                    esp_timer_start_once(evoke_off_timers[idx], (uint64_t)val * 1000ULL);
+                    int ack_len = snprintf(ack, sizeof(ack),
+                        "OK,EVOKE,%d,%d,%" PRId64, ch, val, t_onset);
+                    sendto(sock, ack, ack_len, 0, (struct sockaddr *)&client_addr, addr_len);
+                    ESP_LOGI(TAG, "EVOKE CH%d %d ms @ %" PRId64 " us", ch, val, t_onset);
+                } else {
+                    const char *resp = "ERR,LEDC";
+                    sendto(sock, resp, strlen(resp), 0, (struct sockaddr *)&client_addr, addr_len);
+                    ESP_LOGE(TAG, "EVOKE ledc failed: %s", esp_err_to_name(err));
+                }
+            }
+        } else if (sscanf(rx_buf, "SYNC,%llu", &pc_us) == 1) {
+            /* --- SYNC: PC 时间对齐, 回送 t_recv 与 t_send --- */
+            int64_t t_send = esp_timer_get_time();
+            int ack_len = snprintf(ack, sizeof(ack),
+                "OK,SYNC,%llu,%" PRId64 ",%" PRId64, pc_us, t_recv, t_send);
+            sendto(sock, ack, ack_len, 0, (struct sockaddr *)&client_addr, addr_len);
+            ESP_LOGD(TAG, "SYNC pc=%llu recv=%" PRId64 " send=%" PRId64, pc_us, t_recv, t_send);
+        } else if (strcmp(rx_buf, "EDGE_LOG,ON") == 0) {
+            /* --- EDGE_LOG,ON: 启用每边沿日志, 后续 EDGES 包广播到 PC:5006 --- */
+            esp_err_t err = edge_log_enable_all();
+            int ack_len = snprintf(ack, sizeof(ack),
+                err == ESP_OK ? "OK,EDGE_LOG,ON" : "ERR,EDGE_LOG");
+            sendto(sock, ack, ack_len, 0, (struct sockaddr *)&client_addr, addr_len);
+        } else if (strcmp(rx_buf, "EDGE_LOG,OFF") == 0) {
+            /* --- EDGE_LOG,OFF: 停用日志 --- */
+            edge_log_disable_all();
+            int ack_len = snprintf(ack, sizeof(ack),
+                "OK,EDGE_LOG,OFF,%" PRIu32, edge_drop_count);  /* 同时回报丢弃计数 */
+            sendto(sock, ack, ack_len, 0, (struct sockaddr *)&client_addr, addr_len);
         } else {
             const char *resp = "ERR,PARSE";
-            sendto(sock, resp, strlen(resp), 0,
-                   (struct sockaddr *)&client_addr, addr_len);
+            sendto(sock, resp, strlen(resp), 0, (struct sockaddr *)&client_addr, addr_len);
         }
     }
 
@@ -344,6 +579,19 @@ void app_main(void)
 
     /* 2. LEDC — 立即开始 PWM 输出, 零 CPU 开销 */
     ledc_init_all();
+
+    /* 2.1 EVOKE 单次刺激 off-timer (8 个一次性定时器) */
+    evoke_timers_init();
+
+    /* 2.2 边沿日志: ringbuf + GPIO ISR 服务 + 发送任务 (默认禁用, EDGE_LOG,ON 启用) */
+    edge_ringbuf = xRingbufferCreate(EDGE_RINGBUF_SIZE, RINGBUF_TYPE_NOSPLIT);
+    if (edge_ringbuf == NULL) {
+        ESP_LOGE(TAG, "RingBuffer create failed — EDGE_LOG will be disabled");
+    } else {
+        ESP_ERROR_CHECK(gpio_install_isr_service(ESP_INTR_FLAG_IRAM));
+        xTaskCreatePinnedToCore(edge_sender_task, "edge_tx", 3072, NULL, 3, NULL, 0);
+        ESP_LOGI(TAG, "Edge logging infrastructure ready (use EDGE_LOG,ON to start)");
+    }
 
     /* 3. WiFi — 可能阻塞数秒, LEDC 已在运行 */
     wifi_init_sta();
