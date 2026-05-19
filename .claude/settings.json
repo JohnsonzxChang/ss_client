@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cat build/partition_table/*.in)",
+      "Bash(ls -lh build/gatt_client_demo.* build/bootloader/bootloader.bin)",
+      "WebFetch(domain:docs.espressif.com)",
+      "Read(//c/Users/thlab/esp/v5.5/esp-idf/examples/peripherals/**)",
+      "Read(//c/Users/thlab/esp/v5.5/esp-idf/examples/**)",
+      "Read(//c/Users/thlab/esp/v5.5/esp-idf/components/**)",
+      "Bash(source /c/Users/thlab/esp/v5.5/esp-idf/export.sh)",
+      "Bash(idf.py build)",
+      "Bash(\"C:/Users/thlab/.espressif/tools/idf-python/3.11.2/python.exe\" \"C:/Users/thlab/esp/v5.5/esp-idf/tools/idf.py\" build)",
+      "Read(//c/Users/thlab/.espressif/python_env/**)",
+      "Bash(\"C:/Users/thlab/.espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe\" \"C:/Users/thlab/esp/v5.5/esp-idf/tools/idf.py\" build)",
+      "Bash(IDF_PATH=\"C:/Users/thlab/esp/v5.5/esp-idf\" IDF_TOOLS_PATH=\"C:/Users/thlab/.espressif\" \"C:/Users/thlab/.espressif/python_env/idf5.5_py3.11_env/Scripts/python.exe\" \"C:/Users/thlab/esp/v5.5/esp-idf/tools/idf.py\" build)",
+      "Bash(cmd.exe /C \"cd /d C:\\\\Users\\\\thlab\\\\Documents\\\\esp_prj\\\\ss_client && C:\\\\Users\\\\thlab\\\\esp\\\\v5.5\\\\esp-idf\\\\export.bat >nul 2>&1 && idf.py build\")",
+      "Bash(cmd.exe /C \"cd /d C:\\\\Users\\\\thlab\\\\Documents\\\\esp_prj\\\\ss_client && call C:\\\\Users\\\\thlab\\\\esp\\\\v5.5\\\\esp-idf\\\\export.bat && idf.py build\")"
+    ]
+  }
+}

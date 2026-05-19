@@ -1,0 +1,9 @@
+menu "SSVEP Signal Generator Configuration"
+
+    config SSVEP_UDP_PORT
+        int "UDP server port"
+        default 5005
+        help
+            Port number for the UDP configuration server.
+
+endmenu

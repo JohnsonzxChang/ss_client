@@ -1,0 +1,18 @@
+Command: ninja all
+[1/9] Performing build step for 'bootloader'
+[1/1] C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\thlab\Documents\esp_prj\ss_client\build\bootloader\esp-idf\esptool_py && C:\Users\thlab\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Users/thlab/esp/v5.5/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x1000 C:/Users/thlab/Documents/esp_prj/ss_client/build/bootloader/bootloader.bin"
+Bootloader binary size 0x6680 bytes. 0x980 bytes (8%) free.
+[2/9] No install step for 'bootloader'
+[3/9] Completed 'bootloader'
+[4/9] Building C object esp-idf/main/CMakeFiles/__idf_main.dir/station_example_main.c.obj
+[5/9] Linking C static library esp-idf\main\libmain.a
+[6/9] Generating esp-idf/esp_system/ld/sections.ld
+[7/9] Linking CXX executable gatt_client_demo.elf
+[8/9] Generating binary image from built executable
+esptool.py v4.10.dev2
+Creating esp32 image...
+Merged 2 ELF sections
+Successfully created esp32 image.
+Generated C:/Users/thlab/Documents/esp_prj/ss_client/build/gatt_client_demo.bin
+[9/9] C:\WINDOWS\system32\cmd.exe /C "cd /D C:\Users\thlab\Documents\esp_prj\ss_client\build\esp-idf\esptool_py && C:\Users\thlab\.espressif\python_env\idf5.5_py3.11_env\Scripts\python.exe C:/Users/thlab/esp/v5.5/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app C:/Users/thlab/Documents/esp_prj/ss_client/build/partition_table/partition-table.bin C:/Users/thlab/Documents/esp_prj/ss_client/build/gatt_client_demo.bin"
+gatt_client_demo.bin binary size 0xca720 bytes. Smallest app partition is 0x100000 bytes. 0x358e0 bytes (21%) free.

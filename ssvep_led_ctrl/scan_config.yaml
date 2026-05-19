@@ -1,0 +1,15 @@
+# SSVEP 频率扫描配置
+
+esp:
+  ip: "192.168.137.100"
+  port: 5005
+
+scan:
+  channels: [1,2,3,4,5,6,7,8]           # 通道列表, 如 [1, 2, 3]
+  freq_start: 8           # 起始频率 Hz
+  freq_stop: 80           # 终止频率 Hz (含)
+  freq_step: 2            # 频率步进 Hz
+  stim_duration: 5.0      # 单频刺激时长 (秒)
+  rest_duration: 2.0      # 组间休息时长 (秒)
+
+output: null              # 输出文件名, null 则自动生成 ssvep_scan_YYYYMMDD_HHMMSS.json

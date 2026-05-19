@@ -1,0 +1,9 @@
+
+
+# Load bootloader symbols
+set confirm off
+    add-symbol-file C:/Users/thlab/Documents/esp_prj/ss_client/build/bootloader/bootloader.elf
+set confirm on
+
+# Load application symbols
+file C:/Users/thlab/Documents/esp_prj/ss_client/build/gatt_client_demo.elf

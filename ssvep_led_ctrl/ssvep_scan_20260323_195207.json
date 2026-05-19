@@ -1,0 +1,284 @@
+{
+  "config": {
+    "channels": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "freq_start": 8,
+    "freq_stop": 80,
+    "freq_step": 2,
+    "stim_duration_s": 5.0,
+    "rest_duration_s": 2.0,
+    "esp_ip": "192.168.137.100",
+    "tick_frequency": 1000000000.0
+  },
+  "scan_start_tick": 617750573009400,
+  "scan_end_tick": 618037759487200,
+  "trials": [
+    {
+      "index": 0,
+      "freq_hz": 8,
+      "stim_start_tick": 617751238532200,
+      "stim_end_tick": 617756239029300,
+      "rest_start_tick": 617756636791500
+    },
+    {
+      "index": 1,
+      "freq_hz": 10,
+      "stim_start_tick": 617758886945800,
+      "stim_end_tick": 617763887296000,
+      "rest_start_tick": 617764341623900
+    },
+    {
+      "index": 2,
+      "freq_hz": 12,
+      "stim_start_tick": 617766910128200,
+      "stim_end_tick": 617771910328200,
+      "rest_start_tick": 617772269536400
+    },
+    {
+      "index": 3,
+      "freq_hz": 14,
+      "stim_start_tick": 617774592495300,
+      "stim_end_tick": 617779592704600,
+      "rest_start_tick": 617780168044500
+    },
+    {
+      "index": 4,
+      "freq_hz": 16,
+      "stim_start_tick": 617782729864800,
+      "stim_end_tick": 617787730120000,
+      "rest_start_tick": 617788387744600
+    },
+    {
+      "index": 5,
+      "freq_hz": 18,
+      "stim_start_tick": 617791229319400,
+      "stim_end_tick": 617796229702400,
+      "rest_start_tick": 617796400884400
+    },
+    {
+      "index": 6,
+      "freq_hz": 20,
+      "stim_start_tick": 617799117483600,
+      "stim_end_tick": 617804117676500,
+      "rest_start_tick": 617804536989700
+    },
+    {
+      "index": 7,
+      "freq_hz": 22,
+      "stim_start_tick": 617806828792200,
+      "stim_end_tick": 617811828867500,
+      "rest_start_tick": 617812254861000
+    },
+    {
+      "index": 8,
+      "freq_hz": 24,
+      "stim_start_tick": 617814519430300,
+      "stim_end_tick": 617819519802600,
+      "rest_start_tick": 617820108965600
+    },
+    {
+      "index": 9,
+      "freq_hz": 26,
+      "stim_start_tick": 617822212332100,
+      "stim_end_tick": 617827212613500,
+      "rest_start_tick": 617827627546200
+    },
+    {
+      "index": 10,
+      "freq_hz": 28,
+      "stim_start_tick": 617829879605200,
+      "stim_end_tick": 617834879920400,
+      "rest_start_tick": 617835009178500
+    },
+    {
+      "index": 11,
+      "freq_hz": 30,
+      "stim_start_tick": 617837516590100,
+      "stim_end_tick": 617842517003900,
+      "rest_start_tick": 617843494261500
+    },
+    {
+      "index": 12,
+      "freq_hz": 32,
+      "stim_start_tick": 617846040944000,
+      "stim_end_tick": 617851041228600,
+      "rest_start_tick": 617851994625700
+    },
+    {
+      "index": 13,
+      "freq_hz": 34,
+      "stim_start_tick": 617854153168900,
+      "stim_end_tick": 617859153549300,
+      "rest_start_tick": 617859559466400
+    },
+    {
+      "index": 14,
+      "freq_hz": 36,
+      "stim_start_tick": 617862121228200,
+      "stim_end_tick": 617867121687400,
+      "rest_start_tick": 617867550620300
+    },
+    {
+      "index": 15,
+      "freq_hz": 38,
+      "stim_start_tick": 617869817036000,
+      "stim_end_tick": 617874817539400,
+      "rest_start_tick": 617874937881200
+    },
+    {
+      "index": 16,
+      "freq_hz": 40,
+      "stim_start_tick": 617877454418600,
+      "stim_end_tick": 617882454769200,
+      "rest_start_tick": 617882919059800
+    },
+    {
+      "index": 17,
+      "freq_hz": 42,
+      "stim_start_tick": 617885182627400,
+      "stim_end_tick": 617890182726500,
+      "rest_start_tick": 617890295572300
+    },
+    {
+      "index": 18,
+      "freq_hz": 44,
+      "stim_start_tick": 617892819729700,
+      "stim_end_tick": 617897820003800,
+      "rest_start_tick": 617898546087100
+    },
+    {
+      "index": 19,
+      "freq_hz": 46,
+      "stim_start_tick": 617901116314200,
+      "stim_end_tick": 617906116423600,
+      "rest_start_tick": 617906381554300
+    },
+    {
+      "index": 20,
+      "freq_hz": 48,
+      "stim_start_tick": 617908708107600,
+      "stim_end_tick": 617913708248600,
+      "rest_start_tick": 617914361703300
+    },
+    {
+      "index": 21,
+      "freq_hz": 50,
+      "stim_start_tick": 617916718212000,
+      "stim_end_tick": 617921718457600,
+      "rest_start_tick": 617922050790900
+    },
+    {
+      "index": 22,
+      "freq_hz": 52,
+      "stim_start_tick": 617924546264200,
+      "stim_end_tick": 617929546422800,
+      "rest_start_tick": 617929724237600
+    },
+    {
+      "index": 23,
+      "freq_hz": 54,
+      "stim_start_tick": 617932081244900,
+      "stim_end_tick": 617937081371500,
+      "rest_start_tick": 617937420702400
+    },
+    {
+      "index": 24,
+      "freq_hz": 56,
+      "stim_start_tick": 617940432339300,
+      "stim_end_tick": 617945432782900,
+      "rest_start_tick": 617945596458900
+    },
+    {
+      "index": 25,
+      "freq_hz": 58,
+      "stim_start_tick": 617948413834900,
+      "stim_end_tick": 617953413982100,
+      "rest_start_tick": 617953583532900
+    },
+    {
+      "index": 26,
+      "freq_hz": 60,
+      "stim_start_tick": 617955842492000,
+      "stim_end_tick": 617960842563900,
+      "rest_start_tick": 617960961789400
+    },
+    {
+      "index": 27,
+      "freq_hz": 62,
+      "stim_start_tick": 617963240494800,
+      "stim_end_tick": 617968240729000,
+      "rest_start_tick": 617968436082100
+    },
+    {
+      "index": 28,
+      "freq_hz": 64,
+      "stim_start_tick": 617970852297200,
+      "stim_end_tick": 617975852769600,
+      "rest_start_tick": 617976309794800
+    },
+    {
+      "index": 29,
+      "freq_hz": 66,
+      "stim_start_tick": 617978823259300,
+      "stim_end_tick": 617983823351300,
+      "rest_start_tick": 617984469170800
+    },
+    {
+      "index": 30,
+      "freq_hz": 68,
+      "stim_start_tick": 617986558367600,
+      "stim_end_tick": 617991558463900,
+      "rest_start_tick": 617991675602100
+    },
+    {
+      "index": 31,
+      "freq_hz": 70,
+      "stim_start_tick": 617994218128000,
+      "stim_end_tick": 617999218307300,
+      "rest_start_tick": 617999650893000
+    },
+    {
+      "index": 32,
+      "freq_hz": 72,
+      "stim_start_tick": 618001916644000,
+      "stim_end_tick": 618006917216100,
+      "rest_start_tick": 618007034899700
+    },
+    {
+      "index": 33,
+      "freq_hz": 74,
+      "stim_start_tick": 618009557231000,
+      "stim_end_tick": 618014557458700,
+      "rest_start_tick": 618015010225200
+    },
+    {
+      "index": 34,
+      "freq_hz": 76,
+      "stim_start_tick": 618017287543900,
+      "stim_end_tick": 618022287603600,
+      "rest_start_tick": 618022397884200
+    },
+    {
+      "index": 35,
+      "freq_hz": 78,
+      "stim_start_tick": 618024681539700,
+      "stim_end_tick": 618029681892100,
+      "rest_start_tick": 618029873235400
+    },
+    {
+      "index": 36,
+      "freq_hz": 80,
+      "stim_start_tick": 618032612254400,
+      "stim_end_tick": 618037612445800,
+      "rest_start_tick": 618037759371000
+    }
+  ]
+}
